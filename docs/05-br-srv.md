@@ -12,8 +12,22 @@ cp -a /etc/net/ifaces /root/ifaces.backup
 mkdir -p /etc/net/ifaces/ens18
 cd /etc/net/ifaces/ens18
 mcedit options
-# Впиши TYPE=eth, BOOTPROTO=static, NM_CONTROLLED=no,
-# DISABLED=no, CONFIG_IPV4=yes, ONBOOT=yes
+```
+
+В файл `options` впиши:
+
+```ini
+TYPE=eth
+BOOTPROTO=static
+NM_CONTROLLED=no
+DISABLED=no
+CONFIG_IPV4=yes
+ONBOOT=yes
+```
+
+После F2 и F10 продолжи:
+
+```bash
 echo 192.168.4.2/28 > ipv4address
 echo 'default via 192.168.4.1' > ipv4route
 echo 'nameserver 192.168.0.2' > resolv.conf
@@ -57,7 +71,7 @@ systemctl enable sshd
 systemctl restart sshd
 ```
 
-В команде `echo 'sshuser:P@ssw0rd' | chpasswd` демонстрационный пароль вводится напрямую ради скорости учебного стенда. В рабочей сети так не делай: используй интерактивный `passwd`.
+Пароль устанавливается обычной командой `passwd sshuser`. При запросе дважды введи учебный пароль `P@ssw0rd`. Не вводи `useradd` повторно, если `id sshuser` показал существующую учётную запись.
 
 ## В. DNS, время и проверка
 
