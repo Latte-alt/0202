@@ -14,8 +14,22 @@ cp -a /etc/net/ifaces /root/ifaces.backup
 mkdir -p /etc/net/ifaces/ens18
 cd /etc/net/ifaces/ens18
 mcedit options
-# Впиши TYPE=eth, BOOTPROTO=dhcp, NM_CONTROLLED=no,
-# DISABLED=no, CONFIG_IPV4=yes, ONBOOT=yes
+```
+
+В файл `options` впиши:
+
+```ini
+TYPE=eth
+BOOTPROTO=dhcp
+NM_CONTROLLED=no
+DISABLED=no
+CONFIG_IPV4=yes
+ONBOOT=yes
+```
+
+После F2 и F10 продолжи:
+
+```bash
 # Убираем возможные старые статические настройки этого интерфейса
 rm -f ipv4address ipv4route
 systemctl restart network
