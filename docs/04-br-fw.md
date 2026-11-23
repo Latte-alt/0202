@@ -14,8 +14,22 @@ cp -a /etc/net/ifaces /root/ifaces.backup
 mkdir -p /etc/net/ifaces/{ens18,ens19}
 cd /etc/net/ifaces/ens18
 mcedit options
-# Впиши TYPE=eth, BOOTPROTO=static, NM_CONTROLLED=no,
-# DISABLED=no, CONFIG_IPV4=yes, ONBOOT=yes
+```
+
+В файл `options` впиши:
+
+```ini
+TYPE=eth
+BOOTPROTO=static
+NM_CONTROLLED=no
+DISABLED=no
+CONFIG_IPV4=yes
+ONBOOT=yes
+```
+
+После F2 и F10 продолжи:
+
+```bash
 cp /etc/net/ifaces/ens18/options /etc/net/ifaces/ens19/options
 echo 192.168.3.2/30 > ipv4address
 echo 'default via 192.168.3.1' > ipv4route
@@ -46,7 +60,7 @@ cp /etc/frr/frr.conf /etc/frr/frr.conf.bak 2>/dev/null || true
 mcedit /etc/frr/daemons
 # Найди ospfd=no и замени на ospfd=yes
 mcedit /etc/frr/frr.conf
-# В файл впиши строки из следующего блока (без EOF):
+# В файл впиши строки из следующего блока:
 ```
 
 ```text
