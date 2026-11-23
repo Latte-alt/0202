@@ -12,17 +12,12 @@
 hostnamectl set-hostname hq-cli.au-team.irpo
 cp -a /etc/net/ifaces /root/ifaces.backup
 mkdir -p /etc/net/ifaces/ens18
-cat > /etc/net/ifaces/ens18/options <<'EOF'
-TYPE=eth
-BOOTPROTO=dhcp
-NM_CONTROLLED=no
-DISABLED=no
-CONFIG_IPV4=yes
-CONFIG_IPV6=no
-ONBOOT=yes
-EOF
+cd /etc/net/ifaces/ens18
+mcedit options
+# Впиши TYPE=eth, BOOTPROTO=dhcp, NM_CONTROLLED=no,
+# DISABLED=no, CONFIG_IPV4=yes, ONBOOT=yes
 # Убираем возможные старые статические настройки этого интерфейса
-rm -f /etc/net/ifaces/ens18/ipv4address /etc/net/ifaces/ens18/ipv4route
+rm -f ipv4address ipv4route
 systemctl restart network
 sleep 3
 ip -br -4 a
@@ -47,7 +42,7 @@ getent ahostsv4 raw.githubusercontent.com
 На настоящей сдаче сеть HQ-CLI должна работать **через DNS HQ-SRV**, а не постоянно использовать внешний `77.88.8.8`. Если `host ... 192.168.0.2` работает, а обычный `getent` — нет, проверь `/etc/resolv.conf` и систему его формирования. Чтобы быстро проверить без перезапуска сети:
 
 ```bash
-printf '%s\n' 'nameserver 192.168.0.2' 'search au-team.irpo' > /etc/resolv.conf
+echo 'nameserver 192.168.0.2' > /etc/resolv.conf
 getent ahostsv4 raw.githubusercontent.com
 ```
 
