@@ -16,9 +16,22 @@ cp -a /etc/net/ifaces /root/ifaces.backup
 mkdir -p /etc/net/ifaces/ens18
 cd /etc/net/ifaces/ens18
 mcedit options
-# Вставь строки TYPE=eth, BOOTPROTO=static,
-# NM_CONTROLLED=no, DISABLED=no, CONFIG_IPV4=yes, ONBOOT=yes
-# Сохрани F2 и выйди F10
+```
+
+В `options` запиши:
+
+```ini
+TYPE=eth
+BOOTPROTO=static
+NM_CONTROLLED=no
+DISABLED=no
+CONFIG_IPV4=yes
+ONBOOT=yes
+```
+
+После F2 и F10:
+
+```bash
 echo 192.168.0.2/27 > ipv4address
 echo 'default via 192.168.0.1' > ipv4route
 echo 'nameserver 77.88.8.8' > resolv.conf
