@@ -12,24 +12,21 @@
 hostnamectl set-hostname br-fw.au-team.irpo
 cp -a /etc/net/ifaces /root/ifaces.backup
 mkdir -p /etc/net/ifaces/{ens18,ens19}
-cat > /etc/net/ifaces/ens18/options <<'EOF'
-TYPE=eth
-BOOTPROTO=static
-NM_CONTROLLED=no
-DISABLED=no
-CONFIG_IPV4=yes
-CONFIG_IPV6=no
-ONBOOT=yes
-EOF
+cd /etc/net/ifaces/ens18
+mcedit options
+# Впиши TYPE=eth, BOOTPROTO=static, NM_CONTROLLED=no,
+# DISABLED=no, CONFIG_IPV4=yes, ONBOOT=yes
 cp /etc/net/ifaces/ens18/options /etc/net/ifaces/ens19/options
-printf '%s\n' '192.168.3.2/30' > /etc/net/ifaces/ens18/ipv4address
-printf '%s\n' 'default via 192.168.3.1' > /etc/net/ifaces/ens18/ipv4route
-printf '%s\n' '192.168.4.1/28' > /etc/net/ifaces/ens19/ipv4address
+echo 192.168.3.2/30 > ipv4address
+echo 'default via 192.168.3.1' > ipv4route
+cd ../ens19
+echo 192.168.4.1/28 > ipv4address
 rm -f /etc/net/ifaces/ens19/ipv4route
-printf '%s\n' 'nameserver 77.88.8.8' > /etc/net/ifaces/ens18/resolv.conf
+echo 'nameserver 77.88.8.8' > /etc/net/ifaces/ens18/resolv.conf
 
 sysctl -w net.ipv4.ip_forward=1
-printf '%s\n' 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/90-demo-forward.conf
+mcedit /etc/sysctl.conf
+# Добавь net.ipv4.ip_forward = 1
 systemctl restart network
 
 ip -br -4 a
@@ -46,9 +43,13 @@ ping -c 2 8.8.8.8
 apt-get update
 apt-get install -y frr
 cp /etc/frr/frr.conf /etc/frr/frr.conf.bak 2>/dev/null || true
-sed -i 's/^ospfd=.*/ospfd=yes/' /etc/frr/daemons
-grep '^ospfd=yes' /etc/frr/daemons
-cat > /etc/frr/frr.conf <<'EOF'
+mcedit /etc/frr/daemons
+# Найди ospfd=no и замени на ospfd=yes
+mcedit /etc/frr/frr.conf
+# В файл впиши строки из следующего блока (без EOF):
+```
+
+```text
 frr defaults traditional
 hostname br-fw
 log syslog informational
@@ -60,7 +61,9 @@ router ospf
 !
 line vty
 !
-EOF
+```
+
+```bash
 chown frr:frr /etc/frr/frr.conf
 systemctl enable --now frr
 systemctl restart frr
@@ -82,8 +85,9 @@ ip route
 ## В. DNS и время после успешного OSPF
 
 ```bash
-printf '%s\n' 'nameserver 192.168.0.2' 'search au-team.irpo' > /etc/net/ifaces/ens18/resolv.conf
-printf '%s\n' 'nameserver 192.168.0.2' 'search au-team.irpo' > /etc/resolv.conf
+mcedit /etc/net/ifaces/ens18/resolv.conf
+# Напиши nameserver 192.168.0.2
+echo 'nameserver 192.168.0.2' > /etc/resolv.conf
 timedatectl set-timezone Asia/Yekaterinburg
 host hq-srv.au-team.irpo 192.168.0.2
 ping -c 2 192.168.0.2
