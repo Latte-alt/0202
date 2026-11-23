@@ -166,8 +166,8 @@ host -t A raw.githubusercontent.com 192.168.0.2
 После успеха меняем **постоянный** DNS HQ-SRV на собственный:
 
 ```bash
-printf '%s\n' 'nameserver 127.0.0.1' 'search au-team.irpo' > /etc/net/ifaces/ens18/resolv.conf
-printf '%s\n' 'nameserver 127.0.0.1' 'search au-team.irpo' > /etc/resolv.conf
+echo 'nameserver 127.0.0.1' > /etc/net/ifaces/ens18/resolv.conf
+echo 'nameserver 127.0.0.1' > /etc/resolv.conf
 ```
 
 > DHCP выдаёт HQ-CLI адрес из диапазона. Если клиент получит НЕ `192.168.1.2`, после шага HQ-CLI поменяй строку `address=/hq-cli...` на фактический адрес и перезапусти `dnsmasq`.
