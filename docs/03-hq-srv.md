@@ -6,24 +6,22 @@
 
 **Важно:** Proxmox уже ставит **VLAN Tag 100**; внутри ALT Linux нужен обычный `ens18`, без `ens18.100`. Все команды — на HQ-SRV, от `root`.
 
-## А. Постоянный IP (один перезапуск сети)
+## А. Постоянный IP — простой шаблон через `mcedit`
+
+**Учить нужно только `cd`, `mcedit`, `echo` и `systemctl restart network`.** Не обязательно запоминать длинные конструкции Bash.
 
 ```bash
 hostnamectl set-hostname hq-srv.au-team.irpo
 cp -a /etc/net/ifaces /root/ifaces.backup
 mkdir -p /etc/net/ifaces/ens18
-cat > /etc/net/ifaces/ens18/options <<'EOF'
-TYPE=eth
-BOOTPROTO=static
-NM_CONTROLLED=no
-DISABLED=no
-CONFIG_IPV4=yes
-CONFIG_IPV6=no
-ONBOOT=yes
-EOF
-printf '%s\n' '192.168.0.2/27' > /etc/net/ifaces/ens18/ipv4address
-printf '%s\n' 'default via 192.168.0.1' > /etc/net/ifaces/ens18/ipv4route
-printf '%s\n' 'nameserver 77.88.8.8' > /etc/net/ifaces/ens18/resolv.conf
+cd /etc/net/ifaces/ens18
+mcedit options
+# Вставь строки TYPE=eth, BOOTPROTO=static,
+# NM_CONTROLLED=no, DISABLED=no, CONFIG_IPV4=yes, ONBOOT=yes
+# Сохрани F2 и выйди F10
+echo 192.168.0.2/27 > ipv4address
+echo 'default via 192.168.0.1' > ipv4route
+echo 'nameserver 77.88.8.8' > resolv.conf
 systemctl restart network
 ip -br -4 addr
 ip route
@@ -68,9 +66,10 @@ sudo -l -U sshuser
 ```bash
 cp /etc/openssh/sshd_config /etc/openssh/sshd_config.bak
 printf '%s\n' 'Authorized access only' > /etc/openssh/banner
-sed -i -E '/^[[:space:]]*#?[[:space:]]*(Port|AllowUsers|MaxAuthTries|Banner|PasswordAuthentication)[[:space:]]/d' /etc/openssh/sshd_config
-{ printf '%s\n' 'Port 2027' 'AllowUsers sshuser' 'MaxAuthTries 2' 'Banner /etc/openssh/banner' 'PasswordAuthentication yes'; cat /etc/openssh/sshd_config; } > /etc/openssh/sshd_config.new
-mv /etc/openssh/sshd_config.new /etc/openssh/sshd_config
+mcedit /etc/openssh/sshd_config
+# Найди и измени вручную строки Port, AllowUsers,
+# MaxAuthTries, Banner, PasswordAuthentication.
+# Не оставляй дублирующих активных значений.
 sshd -t && systemctl enable --now sshd && systemctl restart sshd
 ss -tlnp | grep ':2027'
 ```
@@ -83,7 +82,11 @@ ss -tlnp | grep ':2027'
 
 ```bash
 cp /etc/dnsmasq.conf /etc/dnsmasq.conf.bak
-cat > /etc/dnsmasq.conf <<'EOF'
+mcedit /etc/dnsmasq.conf
+
+Впиши в файл следующие строки (без служебных команд `cat`/`EOF`):
+
+```ini
 # DNS для учебного домена au-team.irpo
 listen-address=127.0.0.1,192.168.0.2
 no-hosts
@@ -105,7 +108,9 @@ address=/br-fw.au-team.irpo/192.168.3.2
 address=/hq-cli.au-team.irpo/192.168.1.2
 address=/docker.au-team.irpo/172.16.1.1
 address=/web.au-team.irpo/172.16.2.1
-EOF
+```
+
+```bash
 
 dnsmasq --test
 systemctl enable --now dnsmasq
