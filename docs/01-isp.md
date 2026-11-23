@@ -1,95 +1,114 @@
-# 01. ISP: интернет, три интерфейса, NAT — около 6 минут
+# 01. ISP — настраиваем вручную и запоминаем
 
-[← Оглавление](../README.md) · [← Подготовка](00-start.md) · [Далее: маршрутизаторы →](02-routers.md)
+[← Оглавление](../README.md) · [Как запомнить команды](11-kak-zapomnit.md) · [Далее: EcoRouter](02-routers.md)
 
-## Цель
+**Задача:** WAN по DHCP, LAN к HQ `172.16.1.1/28`, LAN к BR `172.16.2.1/28`, включить пересылку и NAT.
 
-WAN получает настройки по DHCP, порт к HQ — `172.16.1.1/28`, к BR — `172.16.2.1/28`. Включить IPv4 forwarding и MASQUERADE наружу.
+> Пример: `ens18` — WAN, `ens19` — HQ, `ens20` — BR. **Проверь порядок сетевых карт в Proxmox по MAC.** Работай в консоли Proxmox как root. Не переписывай рабочую WAN-конфигурацию, если DHCP уже работает.
 
-**Предполагаем:** `ens18` = WAN, `ens19` = HQ, `ens20` = BR. **Сначала проверь MAC-адреса в Proxmox**. Если иначе — замени имена во всём блоке.
-
-## Быстрый блок (root)
+## 1. Имя и адреса
 
 ```bash
 hostnamectl set-hostname isp
 cp -a /etc/net/ifaces /root/ifaces.backup
-mkdir -p /etc/net/ifaces/{ens18,ens19,ens20}
+cd /etc/net/ifaces
+mkdir -p ens19 ens20
+cd ens19
+mcedit options
+```
 
-# WAN: DHCP
-cat > /etc/net/ifaces/ens18/options <<'EOF'
-TYPE=eth
-BOOTPROTO=dhcp
-NM_CONTROLLED=no
-DISABLED=no
-CONFIG_IPV4=yes
-CONFIG_IPV6=no
-ONBOOT=yes
-EOF
+В `options` впиши простой шаблон:
 
-# HQ: статический интерфейс
-cat > /etc/net/ifaces/ens19/options <<'EOF'
+```ini
 TYPE=eth
 BOOTPROTO=static
 NM_CONTROLLED=no
 DISABLED=no
 CONFIG_IPV4=yes
-CONFIG_IPV6=no
 ONBOOT=yes
-EOF
-printf '%s\n' '172.16.1.1/28' > /etc/net/ifaces/ens19/ipv4address
+```
 
-# BR: статический интерфейс
-cp /etc/net/ifaces/ens19/options /etc/net/ifaces/ens20/options
-printf '%s\n' '172.16.2.1/28' > /etc/net/ifaces/ens20/ipv4address
+Сохрани **F2**, выйди **F10**. Укажи IP:
 
-# Сторонние статические маршруты на ISP-HQ/BR не нужны
-rm -f /etc/net/ifaces/ens19/ipv4route /etc/net/ifaces/ens20/ipv4route
+```bash
+echo 172.16.1.1/28 > ipv4address
+cd ../ens20
+cp ../ens19/options options
+echo 172.16.2.1/28 > ipv4address
+```
 
-# Включаем пересылку сейчас и после перезагрузки
-sysctl -w net.ipv4.ip_forward=1
-printf '%s\n' 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/90-demo-forward.conf
+С WAN (`ens18`) должен работать DHCP: `BOOTPROTO=dhcp`. Если `ens19/ens20` ранее имели чужие маршруты, открой их папки и удали только устаревший `ipv4route`.
+
+**Один перезапуск после всех настроек:**
+
+```bash
 systemctl restart network
-
-# Проверяем, что WAN получил шлюз и интернет
-ip -br -4 a
+ip -br a
 ip route
 ping -c 2 8.8.8.8
 ```
 
-Если WAN не получает DHCP, **остановись и проверь подключение к учебной сети**; не добавляй случайный gateway вручную.
+Если WAN не получает адрес по DHCP — сначала проверь мост Proxmox, а не добавляй выдуманный шлюз.
 
-## NAT — отдельный короткий блок
+## 2. Разрешаем пересылку пакетов
+
+Сначала включи прямо сейчас:
+
+```bash
+sysctl -w net.ipv4.ip_forward=1
+```
+
+Чтобы сохранилось после перезагрузки:
+
+```bash
+mcedit /etc/sysctl.conf
+```
+
+Добавь или исправь строку:
+
+```ini
+net.ipv4.ip_forward = 1
+```
+
+## 3. NAT
 
 ```bash
 apt-get update
-apt-get install -y iptables
-# Подставь реальный внешний интерфейс WAN вместо ens18, если отличается.
-iptables -t nat -C POSTROUTING -o ens18 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o ens18 -j MASQUERADE
-mkdir -p /etc/sysconfig
-iptables-save > /etc/sysconfig/iptables
-systemctl enable iptables
+apt-get install iptables
+```
+
+На учебном ISP с внешним `ens18`:
+
+```bash
+iptables -t nat -A POSTROUTING -o ens18 -j MASQUERADE
 iptables -t nat -S
 iptables -S FORWARD
 ```
 
-Если FORWARD имеет политику DROP или запрещающий firewall, нужно разрешить пересылку для двух учебных сегментов с учётом политики стенда. **Не сбрасывай правила на общей машине провайдера**. На изолированной тестовой ВМ ISP иногда удобно временно разрешить FORWARD, но для финального решения лучше ограничить его конкретными интерфейсами.
+**Запомни частями:** `iptables` → `-t nat` → `-A POSTROUTING` → `-o ens18` → `-j MASQUERADE`. Добавляй только если такого правила ещё нет: повторное выполнение `-A` создаёт дубликат. NAT не заменяет разрешение пересылки: если цепочка FORWARD блокирует пакеты, нужны разрешающие правила по политике изолированного учебного стенда.
 
-**Результат:** `ens19` и `ens20` — статические, `ens18` — DHCP, ISP может пересылать пакеты. Правило NAT сохраняется в `/etc/sysconfig/iptables`; после перезагрузки проверь, что сервис iptables действительно загрузил его (`iptables -t nat -S`).
-
-## Быстрая проверка
+Сохранение:
 
 ```bash
-ip -br -4 a
-ip route | grep default
-sysctl net.ipv4.ip_forward
-iptables -t nat -S | grep MASQUERADE
-ping -c 2 8.8.8.8
+iptables-save > /etc/sysconfig/iptables
+systemctl enable iptables
 ```
 
-После настройки обоих роутеров дополнительно проверь, что ISP отвечает на `ping 172.16.1.2` и `ping 172.16.2.2`.
+Проверяй, что служба действительно поднимает правило после перезагрузки.
 
-## Что объяснить на защите
+## 4. Часовой пояс
 
-`MASQUERADE` заменяет частный адрес источника внешним адресом ISP. `net.ipv4.ip_forward=1` разрешает маршрутизацию между интерфейсами. WAN-шлюз приходит через DHCP; две внутренние сети ISP непосредственно подключены.
+```bash
+timedatectl set-timezone Asia/Yekaterinburg
+```
 
-[Далее: маршрутизаторы →](02-routers.md)
+## 5. Что показать
+
+```bash
+ip -br a
+ip route
+sysctl net.ipv4.ip_forward
+iptables -t nat -S
+```
+
+**Запомнить:** `ISP = 3 интерфейса + forwarding + NAT`. На защите скажи: «ISP соединяет маршрутизаторы с внешней сетью, NAT подменяет адрес источника, forwarding разрешает пересылку».
