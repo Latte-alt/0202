@@ -40,37 +40,55 @@ apt-get install -y dnsmasq bind-utils openssh-server sudo
 
 Если пакет `sudo` или другой уже установлен — это нормально. Если установщик не находит пакет, уточни имя в репозитории ALT Linux (например, `apt-cache search ...`), не пытайся скачать случайный rpm.
 
-## В. Пользователь `sshuser`, sudo без пароля
+## В. Пользователь `sshuser` и sudo
 
 ```bash
-id sshuser >/dev/null 2>&1 || useradd -m -u 2027 -s /bin/bash sshuser
-echo 'sshuser:P@ssw0rd' | chpasswd
+id sshuser
+useradd -m -u 2027 sshuser
+passwd sshuser
 usermod -aG wheel sshuser
-control sudo public 2>/dev/null || true
+control sudo public
 mkdir -p /etc/sudoers.d
-# Убедиться, что sudoers подключает /etc/sudoers.d
- grep -Eq '^[@#]includedir[[:space:]]+/etc/sudoers.d' /etc/sudoers || echo '@includedir /etc/sudoers.d' >> /etc/sudoers
-printf '%s\n' 'sshuser ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/sshuser
-chmod 400 /etc/sudoers.d/sshuser
-id -u sshuser
-visudo -c
-sudo -l -U sshuser
+mcedit /etc/sudoers
 ```
 
-Нужный результат `id -u sshuser`: **2027**. Если существующий `sshuser` имеет другой UID, остановись и исправь отдельно с учётом принадлежащих ему файлов.
+Если `id sshuser` уже показывает пользователя — **не выполняй** `useradd`. Введи пароль `P@ssw0rd` через `passwd`. В `/etc/sudoers` проверь строку `@includedir /etc/sudoers.d` (или эквивалентную `#includedir`).
 
-⚠️ Пароль в командной строке удобен только для учебного стенда. В реальной сети используй `passwd sshuser` и не храни общие пароли в скриптах/истории.
+```bash
+mcedit /etc/sudoers.d/sshuser
+```
+
+Впиши строку:
+
+```text
+sshuser ALL=(ALL:ALL) NOPASSWD: ALL
+```
+
+Проверь:
+
+```bash
+chmod 400 /etc/sudoers.d/sshuser
+visudo -c
+id -u sshuser
+```
+
+UID должен быть `2027`. Не оставляй ошибку в `visudo -c`.
 
 ## Г. SSH: порт 2027, две попытки, баннер
 
 ```bash
 cp /etc/openssh/sshd_config /etc/openssh/sshd_config.bak
-printf '%s\n' 'Authorized access only' > /etc/openssh/banner
+mcedit /etc/openssh/banner
+# Напиши: Authorized access only
 mcedit /etc/openssh/sshd_config
 # Найди и измени вручную строки Port, AllowUsers,
 # MaxAuthTries, Banner, PasswordAuthentication.
 # Не оставляй дублирующих активных значений.
-sshd -t && systemctl enable --now sshd && systemctl restart sshd
+# Нужны: Port 2027, AllowUsers sshuser, MaxAuthTries 2,
+# Banner /etc/openssh/banner, PasswordAuthentication yes
+sshd -t
+systemctl enable sshd
+systemctl restart sshd
 ss -tlnp | grep ':2027'
 ```
 
@@ -83,6 +101,7 @@ ss -tlnp | grep ':2027'
 ```bash
 cp /etc/dnsmasq.conf /etc/dnsmasq.conf.bak
 mcedit /etc/dnsmasq.conf
+```
 
 Впиши в файл следующие строки (без служебных команд `cat`/`EOF`):
 
@@ -111,7 +130,6 @@ address=/web.au-team.irpo/172.16.2.1
 ```
 
 ```bash
-
 dnsmasq --test
 systemctl enable --now dnsmasq
 systemctl restart dnsmasq
