@@ -42,30 +42,40 @@ br_srv=${BR_SRV_IP:-192.168.4.2}
 hq_wan=${HQ_RTR_WAN:-172.16.1.2}
 br_wan=${BR_RTR_WAN:-172.16.2.2}
 host_name=$(hostname)
-frame=0
+account=$(id -un)
+prompt_sign='$'
+if (( EUID == 0 )); then prompt_sign='#'; fi
 trap 'exit 130' INT
+
+prompt() {
+    local directory=${PWD##*/}
+    if [[ $PWD == "${HOME:-}" ]]; then directory='~'; fi
+    printf '[%s@%s %s]%s ' "$account" "${host_name%%.*}" "${directory:-/}" "$prompt_sign"
+}
 
 pause() {
     local answer
-    printf '\nСделай скриншот. Enter — дальше, q — выход: '
-    IFS= read -r answer <&3 || exit 0
+    prompt
+    IFS= read -rs answer <&3 || exit 0
+    printf '\n'
     case "$answer" in q|Q) exit 0 ;; esac
 }
 
-title() {
-    frame=$((frame + 1))
-    printf '\n── Задание %s | %s (%s) | кадр %02d | %s ──\n' \
-        "$task" "$role" "$host_name" "$frame" "$1"
+new_frame() {
+    if [[ -t 1 && ${TERM:-dumb} != dumb ]]; then printf '\033[2J\033[H'; fi
 }
 
 run() {
-    local arg status
-    printf '\n$'
-    for arg in "$@"; do printf ' %q' "$arg"; done
-    printf '\n'
+    local arg
+    prompt
+    if [[ $# == 3 && $1 == bash && $2 == -c ]]; then
+        printf '%s\n' "$3"
+    else
+        printf '%q' "$1"
+        for arg in "${@:2}"; do printf ' %q' "$arg"; done
+        printf '\n'
+    fi
     "$@" <&3
-    status=$?
-    if (( status != 0 )); then printf '[Код завершения: %s]\n' "$status"; fi
 }
 
 http() {
@@ -77,14 +87,14 @@ ssh_check() {
 }
 
 chrony_client() {
-    title '4. NTP-клиент'
+    new_frame
     run chronyc -n sources -v
     run chronyc tracking
     pause
 }
 
 if [[ $task == 1 ]]; then
-    title 'Имя устройства, адреса, маршруты и часовой пояс'
+    new_frame
     run hostname
     run ip -br -4 addr
     run ip -4 route
@@ -94,46 +104,46 @@ fi
 
 case "$task $role" in
     '1 isp')
-        title 'NAT и пересылка IPv4'
+        new_frame
         run iptables -t nat -S
         run sysctl net.ipv4.ip_forward
         pause
         ;;
     '1 br-fw')
-        title 'Соседи и интерфейсы OSPF'
+        new_frame
         run vtysh -c 'show ip ospf neighbor'
         run vtysh -c 'show ip ospf interface'
         pause
-        title 'Маршруты OSPF'
+        new_frame
         run vtysh -c 'show ip route ospf'
         pause
         ;;
     '1 hq-srv'|'1 br-srv')
-        title 'Учётная запись, параметры и баннер SSH'
+        new_frame
         run id sshuser
         run bash -c 'sshd -T | grep -E "^(port|allowusers|maxauthtries|banner) "'
         run bash -c 'banner=$(sshd -T | awk '\''$1 == "banner" {print $2; exit}'\''); if [[ $banner == /* ]]; then cat -- "$banner"; fi'
         pause
         if [[ $role == hq-srv ]]; then
-            title 'DNS: A-записи устройств'
+            new_frame
             for name in hq-rtr br-rtr br-fw hq-srv hq-cli br-srv docker web; do
                 run host -W 3 -t A "$name.au-team.irpo" 127.0.0.1
             done
             pause
-            title 'DNS: обратные и внешние запросы'
+            new_frame
             run host -W 3 "$hq_srv" 127.0.0.1
             run host -W 3 "$br_srv" 127.0.0.1
             run host -W 3 ya.ru 127.0.0.1
             pause
         else
-            title 'Связь BR → HQ и выход в интернет'
+            new_frame
             run ping -c 3 -W 2 "$hq_srv"
             run ping -c 3 -W 2 77.88.8.8
             pause
         fi
         ;;
     '1 hq-cli')
-        title 'DHCP и DNS клиента'
+        new_frame
         if command -v nmcli >/dev/null; then
             run nmcli -f GENERAL.DEVICE,IP4,DHCP4 device show
         else
@@ -141,81 +151,81 @@ case "$task $role" in
         fi
         run cat /etc/resolv.conf
         pause
-        title 'Связь HQ → BR и выход в интернет'
+        new_frame
         run ping -c 3 -W 2 "$br_srv"
         run ping -c 3 -W 2 77.88.8.8
         pause
-        title 'SSH и sudo на HQ-SRV'
+        new_frame
         ssh_check "$hq_srv" 'hostname; id; sudo -n id'
         pause
-        title 'SSH и sudo на BR-SRV'
+        new_frame
         ssh_check "$br_srv" 'hostname; id; sudo -n id'
         pause
         ;;
     '2 isp')
-        title '4. NTP-сервер ISP'
+        new_frame
         run systemctl is-active chronyd
         run grep -E '^[[:space:]]*(pool|server|local|allow)[[:space:]]' /etc/chrony.conf
         run chronyc -n sources
         run chronyc tracking
         pause
-        title '8. HTTP и SSH через HQ-RTR'
+        new_frame
         http "http://$hq_wan:8080/"
         ssh_check "$hq_wan" 'hostname; id'
         pause
-        title '8. HTTP и SSH через BR-RTR'
+        new_frame
         http "http://$br_wan:8080/"
         ssh_check "$br_wan" 'hostname; id'
         pause
         ;;
     '2 hq-srv')
-        title '2. Диски и состояние RAID 0'
+        new_frame
         run lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
         run cat /proc/mdstat
         run mdadm --detail /dev/md0
         pause
-        title '2. Автомонтирование массива в /raid'
+        new_frame
         run grep -E '^[[:space:]]*ARRAY' /etc/mdadm.conf
         run grep -E '[[:space:]]/raid[[:space:]]' /etc/fstab
         run findmnt /raid
         pause
-        title '3. Экспорт NFS'
+        new_frame
         run cat /etc/exports
         run exportfs -v
         pause
         chrony_client
-        title '7. Apache, MariaDB и файлы сайта'
+        new_frame
         run bash -c 'systemctl is-active httpd2 || systemctl is-active apache2'
         run bash -c 'systemctl is-active mariadb || systemctl is-active mysqld'
         run ls -l /var/www/html/index.php /var/www/html/logo.png
         http http://127.0.0.1/
         pause
-        title '7. Подключение пользователя web к базе webdb'
+        new_frame
         run mysql -u web -p -D webdb -e 'SELECT CURRENT_USER(), DATABASE(); SHOW TABLES;'
         pause
         ;;
     '2 br-srv')
-        title '1. Samba: компьютер, пользователи и группа'
+        new_frame
         run samba-tool computer list
         run bash -c 'samba-tool user list | sort | grep -E "^hquser[1-5]$"'
         run samba-tool group listmembers hq
         pause
-        title '1. Политика паролей Samba'
+        new_frame
         run samba-tool domain passwordsettings show
         pause
         chrony_client
-        title '5. Инвентарь Ansible'
+        new_frame
         if cd /etc/ansible; then
             run pwd
             run ansible-inventory --graph
         fi
         pause
-        title '5. Ansible ping на четырёх машинах'
+        new_frame
         if [[ $PWD == /etc/ansible ]]; then
             run timeout 180 ansible all -m ping
         fi
         pause
-        title '6. Файл Compose и образы'
+        new_frame
         run ls -l /root/testapp/compose.yaml
         if [[ -f /root/testapp/compose.yaml ]]; then
             if docker compose version >/dev/null 2>&1; then
@@ -226,23 +236,23 @@ case "$task $role" in
         fi
         run docker image ls
         pause
-        title '6. Работа контейнеров и приложения testapp'
+        new_frame
         run docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
         http http://127.0.0.1:8080/
         pause
         ;;
     '2 hq-cli')
-        title '1. Членство в домене и разрешённые команды sudo'
+        new_frame
         run system-auth status
         run id hquser1
         run cat /etc/sudoers.d/hq
         pause
-        title '3. Автомонтирование NFS'
+        new_frame
         run grep -E '[[:space:]]/mnt/nfs[[:space:]]' /etc/fstab
         run timeout 15 ls -ld /mnt/nfs/.
         run findmnt -T /mnt/nfs
         pause
-        title '3. Запись и чтение временного файла через NFS'
+        new_frame
         run timeout 20 bash -c '
             case $(findmnt -n -o FSTYPE -T /mnt/nfs) in
                 nfs|nfs4) ;;
@@ -254,20 +264,19 @@ case "$task $role" in
         '
         pause
         chrony_client
-        title '9. Версия пакета Яндекс Браузера'
+        new_frame
         run bash -c 'rpm -qa | grep -Ei "yandex.*browser|browser.*yandex"'
-        printf 'Открой браузер из меню и сними окно с версией.\n'
         pause
+        printf 'Открой браузер из меню и сними окно с версией.\n'
         ;;
     '2 hq-cli-user')
-        title '1. Вход и проверка прав доменного пользователя'
+        new_frame
         run whoami
         run id
         run sudo -n -l
         run sudo -n cat /etc/hostname
         run sudo -n grep '^root:' /etc/passwd
         run sudo -n id
-        printf '\nДля следующей команды ожидается отказ.\n'
         run sudo -n ls /root
         pause
         ;;
