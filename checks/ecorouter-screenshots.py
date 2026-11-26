@@ -26,23 +26,23 @@ CONFIG_LINE = re.compile(
 
 def command_list(task, role, dhcp_interface):
     if task == "2":
-        commands = [("Статические пробросы портов", "show ip nat static")]
+        commands = ["show ip nat static"]
         if role == "br-rtr":
-            commands.append(("Синхронизация NTP", "show ntp status"))
-        commands.append(("Фрагменты конфигурации NAT и времени", "show running-config"))
+            commands.append("show ntp status")
+        commands.append("show running-config")
         return commands
 
     commands = [
-        ("Адреса интерфейсов и GRE", "show ip interface brief"),
-        ("Таблица маршрутизации", "show ip route"),
-        ("Соседи OSPF", "show ip ospf neighbor"),
-        ("Интерфейсы и аутентификация OSPF", "show ip ospf interface"),
-        ("Трансляции NAT", "show ip nat translations"),
-        ("Локальные пользователи и роли", "show users localdb"),
+        "show ip interface brief",
+        "show ip route",
+        "show ip ospf neighbor",
+        "show ip ospf interface",
+        "show ip nat translations",
+        "show users localdb",
     ]
     if role == "hq-rtr":
-        commands.append(("Выданные адреса DHCP", f"show dhcp-server clients {dhcp_interface}"))
-    commands.append(("Фрагменты конфигурации сети", "show running-config"))
+        commands.append(f"show dhcp-server clients {dhcp_interface}")
+    commands.append("show running-config")
     return commands
 
 
@@ -113,16 +113,18 @@ def display_output(output, command, task):
         lines = [line for line in lines if line.lstrip().startswith(("ip nat ", "ntp server ", "ntp timezone "))]
     else:
         lines = [AUTH_KEY.sub(r"\1 [скрыто]", line) for line in lines if CONFIG_LINE.match(line)]
-    return lines or ["Подходящих строк в конфигурации нет."]
+    return lines
 
 
-def show_frames(task, role, label, prompt, command, lines, page_lines):
-    lines = lines or ["(Пустой вывод)"]
-    for start in range(0, len(lines), page_lines):
-        print(f"\n── Задание {task} | {role} | {label} | часть {start // page_lines + 1} ──")
-        print(f"{prompt} {command}")
-        print("\n".join(lines[start:start + page_lines]))
-        if input("\nСделай скриншот. Enter — дальше, q — выход: ").strip().lower() == "q":
+def show_frames(prompt, command, lines, page_lines):
+    for start in range(0, max(1, len(lines)), page_lines):
+        if sys.stdout.isatty() and os.environ.get("TERM", "dumb") != "dumb":
+            print("\033[2J\033[H", end="")
+        print(f"{prompt}{command}")
+        page = lines[start:start + page_lines]
+        if page:
+            print("\n".join(page))
+        if input(f"{prompt} ").strip().lower() == "q":
             return False
     return True
 
@@ -162,18 +164,18 @@ def main():
         if not prompt.endswith("#") or "(" in prompt:
             raise RuntimeError("Для проверок нужен административный режим EcoRouter с приглашением #.")
 
-        for label, command in command_list(args.task, args.role, args.dhcp_interface):
+        for command in command_list(args.task, args.role, args.dhcp_interface):
             os.write(fd, (command + "\r").encode())
             prompt, output = wait_for_prompt(fd)
             lines = display_output(output, command, args.task)
-            if not show_frames(args.task, args.role, label, prompt, command, lines, args.page_lines):
+            if not show_frames(prompt, command, lines, args.page_lines):
                 return 0
             if command == "show ip nat static" and ERROR.search(output):
                 fallback = "show ip nat translations"
                 os.write(fd, (fallback + "\r").encode())
                 prompt, output = wait_for_prompt(fd)
                 lines = display_output(output, fallback, args.task)
-                if not show_frames(args.task, args.role, label, prompt, fallback, lines, args.page_lines):
+                if not show_frames(prompt, fallback, lines, args.page_lines):
                     return 0
         print("\nГотово. Проверки маршрутизатора закончены.")
         return 0
