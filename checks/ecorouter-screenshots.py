@@ -84,9 +84,9 @@ def wait_for_prompt(fd, *, interactive=False, timeout=40):
             try:
                 chunk = os.read(fd, 16384)
             except OSError as error:
-                raise ConnectionError("SSH-сеанс завершился до приглашения EcoRouter.") from error
+                raise ConnectionError("Соединение завершилось до приглашения EcoRouter.") from error
             if not chunk:
-                raise ConnectionError("SSH-сеанс завершился до приглашения EcoRouter.")
+                raise ConnectionError("Соединение завершилось до приглашения EcoRouter.")
             if interactive:
                 sys.stdout.buffer.write(chunk)
                 sys.stdout.buffer.flush()
@@ -133,27 +133,56 @@ def main():
     parser = argparse.ArgumentParser(description="Проверки EcoRouter с паузами для скриншотов.")
     parser.add_argument("task", choices=("1", "2"), help="номер задания")
     parser.add_argument("role", choices=("hq-rtr", "br-rtr"), help="роль маршрутизатора")
-    parser.add_argument("target", help="пользователь@IP маршрутизатора")
+    parser.add_argument("target", nargs="?", help="пользователь@IP маршрутизатора")
     parser.add_argument("--port", type=int, default=22, help="SSH-порт")
     parser.add_argument("--dhcp-interface", default="vl200", help="интерфейс DHCP для HQ-RTR")
     parser.add_argument("--page-lines", type=int, default=18, help="строк вывода в одном кадре")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--proxmox", type=int, metavar="VMID", help="подключиться из Shell узла Proxmox через qm terminal")
+    mode.add_argument("--print-commands", action="store_true", help="вывести команды для обычной консоли EcoRouter")
+    parser.add_argument("--serial", choices=("serial0", "serial1", "serial2", "serial3"), default="serial0")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_.:/-]+", args.dhcp_interface):
         parser.error("некорректное имя DHCP-интерфейса")
     if args.page_lines < 1 or not 1 <= args.port <= 65535:
         parser.error("проверь SSH-порт и число строк на кадр")
+    commands = command_list(args.task, args.role, args.dhcp_interface)
+    if args.print_commands:
+        if args.target:
+            parser.error("в режиме --print-commands SSH-адрес не нужен")
+        console_commands = [command for command in commands if command != "show running-config"]
+        if args.task == "1":
+            console_commands.append("show running-config | include timezone")
+            if args.role == "hq-rtr":
+                console_commands.extend(("show running-config | include encapsulation", "show running-config | include dhcp-server"))
+        else:
+            console_commands.append("show ip nat translations")
+        print("\n".join(["enable", *console_commands]))
+        return 0
+    if args.proxmox is not None:
+        if args.target or args.proxmox < 100:
+            parser.error("для режима Proxmox укажи только числовой VMID (от 100)")
+        invocation = ["qm", "terminal", str(args.proxmox), "--iface", args.serial]
+        endpoint = f"Proxmox VM {args.proxmox}, {args.serial}"
+        instruction = "Нажми Enter, чтобы увидеть приглашение. При необходимости войди в EcoRouter."
+    else:
+        if not args.target:
+            parser.error("укажи SSH-адрес, --proxmox VMID или --print-commands")
+        invocation = ["ssh", "-tt", "-o", "ConnectTimeout=10", "-p", str(args.port), "--", args.target]
+        endpoint = f"SSH {args.target}, порт {args.port}"
+        instruction = "Введи пароль, если его запросит SSH."
     if os.name != "posix" or not sys.stdin.isatty() or not sys.stdout.isatty():
         parser.error("выполни команду в интерактивном терминале Linux")
 
     import pty
 
-    print(f"Подключение к {args.target}. Введи пароль, если запросит SSH.", flush=True)
+    print(f"Подключение: {endpoint}. {instruction}", flush=True)
     pid, fd = pty.fork()
     if pid == 0:
         try:
-            os.execvp("ssh", ["ssh", "-tt", "-o", "ConnectTimeout=10", "-p", str(args.port), "--", args.target])
+            os.execvp(invocation[0], invocation)
         except OSError as error:
-            print(f"Не удалось запустить SSH: {error}", file=sys.stderr, flush=True)
+            print(f"Не удалось запустить {invocation[0]}: {error}", file=sys.stderr, flush=True)
             os._exit(127)
 
     try:
@@ -164,7 +193,7 @@ def main():
         if not prompt.endswith("#") or "(" in prompt:
             raise RuntimeError("Для проверок нужен административный режим EcoRouter с приглашением #.")
 
-        for command in command_list(args.task, args.role, args.dhcp_interface):
+        for command in commands:
             os.write(fd, (command + "\r").encode())
             prompt, output = wait_for_prompt(fd)
             lines = display_output(output, command, args.task)
@@ -180,7 +209,9 @@ def main():
         print("\nГотово. Проверки маршрутизатора закончены.")
         return 0
     except (ConnectionError, TimeoutError, RuntimeError) as error:
-        print(f"\n{error}", file=sys.stderr)
+        print(f"\n{endpoint}: {error}", file=sys.stderr)
+        if args.proxmox is None:
+            print("Для консоли Proxmox используй --proxmox VMID или выведи команды через --print-commands.", file=sys.stderr)
         return 1
     except (EOFError, KeyboardInterrupt):
         print("\nПроверка остановлена.")
