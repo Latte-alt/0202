@@ -79,11 +79,11 @@ run() {
 }
 
 http() {
-    run curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w 'HTTP %{http_code}\n' "$1"
+    run curl -sS -o /dev/null -w 'HTTP %{http_code}\n' "$1"
 }
 
 ssh_check() {
-    run ssh -o ConnectTimeout=5 -o NumberOfPasswordPrompts=1 -p 2027 "sshuser@$1" "$2"
+    run ssh -p 2027 "sshuser@$1" "$2"
 }
 
 chrony_client() {
@@ -127,18 +127,18 @@ case "$task $role" in
         if [[ $role == hq-srv ]]; then
             new_frame
             for name in hq-rtr br-rtr br-fw hq-srv hq-cli br-srv docker web; do
-                run host -W 3 -t A "$name.au-team.irpo" 127.0.0.1
+                run host -t A "$name.au-team.irpo" 127.0.0.1
             done
             pause
             new_frame
-            run host -W 3 "$hq_srv" 127.0.0.1
-            run host -W 3 "$br_srv" 127.0.0.1
-            run host -W 3 ya.ru 127.0.0.1
+            run host "$hq_srv" 127.0.0.1
+            run host "$br_srv" 127.0.0.1
+            run host ya.ru 127.0.0.1
             pause
         else
             new_frame
-            run ping -c 3 -W 2 "$hq_srv"
-            run ping -c 3 -W 2 77.88.8.8
+            run ping -c 3 "$hq_srv"
+            run ping -c 3 77.88.8.8
             pause
         fi
         ;;
@@ -152,8 +152,8 @@ case "$task $role" in
         run cat /etc/resolv.conf
         pause
         new_frame
-        run ping -c 3 -W 2 "$br_srv"
-        run ping -c 3 -W 2 77.88.8.8
+        run ping -c 3 "$br_srv"
+        run ping -c 3 77.88.8.8
         pause
         new_frame
         ssh_check "$hq_srv" 'hostname; id; sudo -n id'
@@ -186,7 +186,7 @@ case "$task $role" in
         pause
         new_frame
         run grep -E '^[[:space:]]*ARRAY' /etc/mdadm.conf
-        run grep -E '[[:space:]]/raid[[:space:]]' /etc/fstab
+        run grep /raid /etc/fstab
         run findmnt /raid
         pause
         new_frame
@@ -222,7 +222,7 @@ case "$task $role" in
         pause
         new_frame
         if [[ $PWD == /etc/ansible ]]; then
-            run timeout 180 ansible all -m ping
+            run ansible all -m ping
         fi
         pause
         new_frame
@@ -248,20 +248,19 @@ case "$task $role" in
         run cat /etc/sudoers.d/hq
         pause
         new_frame
-        run grep -E '[[:space:]]/mnt/nfs[[:space:]]' /etc/fstab
-        run timeout 15 ls -ld /mnt/nfs/.
-        run findmnt -T /mnt/nfs
+        run grep /mnt/nfs /etc/fstab
+        run ls -ld /mnt/nfs/.
+        run findmnt /mnt/nfs
         pause
         new_frame
-        run timeout 20 bash -c '
-            case $(findmnt -n -o FSTYPE -T /mnt/nfs) in
-                nfs|nfs4) ;;
-                *) echo "NFS не смонтирован в /mnt/nfs"; exit 1 ;;
-            esac
-            file=$(mktemp /mnt/nfs/practice-check.XXXXXX) || exit
-            trap '\''rm -f -- "$file"'\'' EXIT
-            printf "NFS write OK\n" > "$file" && cat "$file"
-        '
+        case $(findmnt -n -o FSTYPE /mnt/nfs) in
+            nfs|nfs4)
+                run bash -c 'file=$(mktemp /mnt/nfs/check.XXXXXX) || exit
+trap '\''rm -f "$file"'\'' EXIT
+echo "NFS write OK" > "$file" && cat "$file"'
+                ;;
+            *) printf 'NFS не смонтирован в /mnt/nfs.\n' ;;
+        esac
         pause
         chrony_client
         new_frame
