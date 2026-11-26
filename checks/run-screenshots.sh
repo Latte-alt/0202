@@ -36,7 +36,7 @@ if [[ ! -t 0 || ! -t 1 ]]; then
 fi
 
 # The two helpers are versioned together. Prefer the local copies in a checkout.
-base=https://raw.githubusercontent.com/Latte-alt/0202/6d2c4087366a0443829280b8d3be4ad48de26f3d/checks
+base=https://raw.githubusercontent.com/Latte-alt/0202/9bf3bcb42d4639a948430999865115b44b0ee7df/checks
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ -r $source_dir/linux-screenshots.sh && -r $source_dir/ecorouter-screenshots.py ]]; then
     helpers=$source_dir
